@@ -1,15 +1,16 @@
 # CSVDB
 
 CSVDB is a KDB-X module that exposes CSV data as qSQL-readable table
-adapters. It is intended for datasets stored as directories of per-column CSV
-files, including date-partitioned datasets. Instead of first importing the
-files into native kdb+ tables, callers can create an adapter and query it with
-qSQL.
+adapters. It supports both directories of per-column CSV files and individual
+flat, multi-column CSV files, including date-partitioned datasets. Instead of
+first importing the files into native kdb+ tables, callers can create an
+adapter and query it with qSQL.
 
 CSVDB is useful for exploring or querying CSV-based historical datasets,
 working with column-oriented exports, and integrating CSV partitions into qSQL
-workflows. It reads the columns needed by a query and assembles them in memory
-to run that query; it does not turn CSV files into a persistent native HDB.
+workflows. It assembles the data in memory to run queries; it does not turn CSV
+files into a persistent native HDB. For per-column layouts it reads the
+referenced columns, while a flat CSV file is parsed as a whole.
 
 ## Requirements
 
@@ -50,6 +51,19 @@ column names and type codes define the schema and order. Type codes use q's
 `0:` CSV conventions, for example `s` for symbol, `f` for float, `j` for long,
 and `t` for time. CSVDB uses the header to verify each file's column name.
 
+Alternatively, a flat CSV file can contain all columns in each row, with a
+header row listing the column names. For example, `data/2026.11.07/t.csv` begins:
+
+```csv
+sym,ex,price,size,time
+akn,j,250.9591,7227,02:32:17.036
+abe,l,371.8678,2154,01:44:56.936
+ale,k,311.5099,4387,00:25:23.210
+```
+
+Flat files use comma delimiters and must have headers that match the supplied
+column names and order.
+
 ## Load the module
 
 With the project and KX module directories on the module search path:
@@ -65,13 +79,13 @@ QPATH="$PWD:$HOME/.kx/mod" q
 ```
 
 Adjust the second path to the location where the KX Parquet module is
-installed. The module exports `csvT` for a single directory and `csvP` for a
-partitioned dataset.
+installed. The module exports `csvT` for one CSV source (a per-column
+directory or a flat file) and `csvP` for a partitioned dataset.
 
-## Single-directory table
+## Single-source table
 
-Create an adapter by passing the directory, column names, and matching type
-codes:
+Create an adapter by passing a directory or flat CSV file path, column names,
+and matching type codes:
 
 ```q
 columns:`sym`ex`price`size`time;
@@ -87,26 +101,34 @@ meta t
 The type string is parallel to the column list: here `sym` and `ex` are
 symbols, `price` is a float, `size` is a long, and `time` is a time.
 
-## Partitioned table
-
-Use `csvP` when each partition is stored in its own directory. `dirs` contains
-the directory for each partition, and `partitions` is a table with one row per
-directory. Its columns (commonly a date column) identify each partition and
-are available to qSQL:
+The same API accepts a flat file with those columns:
 
 ```q
-dirs:`:data/2026.11.05/t/`:data/2026.11.06/t/;
-partitions:([]date:2026.11.05 2026.11.06);
+t:csvdb.csvT[`:data/2026.11.07/t.csv;columns;types];
+select sym,price from t where size>9000
+```
+
+## Partitioned table
+
+Use `csvP` when each partition is stored in its own directory or flat CSV
+file. `dirs` contains the path for each partition, and `partitions` is a table
+with one row per path. Its columns (commonly a date column) identify each
+partition and are available to qSQL:
+
+```q
+dirs:`:data/2026.11.05/t/`:data/2026.11.06/t/`:data/2026.11.07/t.csv;
+partitions:([]date:2026.11.05 2026.11.06 2026.11.07);
 t:csvdb.csvP[dirs;columns;types;partitions];
 
 select from t where date=2026.11.05
-select sym,price from t where date within (2026.11.05;2026.11.06)
+select sym,price from t where date within (2026.11.05;2026.11.07)
 meta t
 ```
 
 Partition filtering allows qSQL to select relevant partitions before querying
-their CSV data. Each partition directory must use the same column names and
-types, and its column files must have matching row counts.
+their CSV data. Each partition must use the same column names and types;
+directory partitions must also have matching row counts across their column
+files.
 
 ## Run the tests
 
