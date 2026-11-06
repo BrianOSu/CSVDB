@@ -13,6 +13,11 @@ csvColumn:{[dir; typeCode; column]
     data
  };
 
+// Read one column, validate its row count, then retain only matching rows.
+csvColumnRows:{[dir;typeCode;column;indices]
+    csvColumn[dir; typeCode; column]indices
+ };
+
 // Read a flat, multi-column CSV file and verify its header against the schema.
 csvFile:{[path;columns;types]
     data:(types;enlist ",") 0: path;
@@ -21,22 +26,46 @@ csvFile:{[path;columns;types]
     data
  };
 
+// Execute a query against a flat CSV file.
+queryFile:{[columns;typeMap;dir;c;b;a;v]
+    (.) (?; csvFile[dir;columns;typeMap columns]; c; b; a),v
+ };
+
+// Filter predicate columns first, then load only referenced rows from the
+// remaining columns before evaluating the select and by expressions.
+queryColFiltered:{[columns; typeMap; dir; c; b; a; v; (refs;whereCols)]
+    if[not count needed:columns where columns in refs;
+       '"Invalid columns requested"]
+    if[1<>count distinct count each whereData:csvColumn[dir;;]'[typeMap whereCols; whereCols];
+       '"column CSV files have different row counts"];
+    whereData:?[(^/)whereData; c; (); `i]; // Indices to apply to cols
+    if[1<>count distinct count each data:csvColumnRows[dir; ; ; whereData]'[typeMap needed; needed];
+       '"column CSV files have different row counts"];
+    (.) (?; (^/)data; (); b; a),v
+ };
+
+// Load all referenced columns and let qSQL apply the where clause.
+queryCol:{[columns;typeMap;dir;c;b;a;v;refs]
+    if[not count needed:columns where columns in refs;
+        '"Invalid columns requested"];
+    if[1<>count distinct count each data:csvColumn[dir;;]'[typeMap needed; needed];
+        '"column CSV files have different row counts"];
+    (.) (?; (^/)data; c; b; a),v
+ };
+
+
 // Query callback: find referenced columns, read their files, and execute the
 // functional qSQL query against the assembled in-memory table.
 csvQuery:{[columns; typeMap; isFile; `T!([t]); c; b; a; v]
     if[isFile;
-        source:csvFile[t;columns;typeMap columns];
-        :(.) (?;source;c;b;a),v];
-    // Functional query arguments are c=where, b=by, and a=select expressions.
-    refs:distinct raze tab.fv each (c;b;a);
-    needed:columns where columns in refs;
-    data:{[dir;typeMap;column]
-            csvColumn[dir;typeMap column;column]
-          }[t;typeMap] each needed;
-    rowCounts:count each data;
-    if[not all rowCounts=first rowCounts;
-        '"column CSV files have different row counts"];
-    (.) (?; (^/)data; c; b; a),v
+        :queryFile[columns;typeMap;t;c;b;a;v]];
+    // Identify required columns from c=where, b=by, and a=select expressions.
+    whereCols:distinct tab.fv c;
+    refs:distinct raze (whereCols; tab.fv b; tab.fv a);
+    // Can filter columns being read if where clause supplied
+    if[count whereCols:columns where columns in whereCols;
+        :queryColFiltered[columns; typeMap; t; c; b; a; v; (refs;whereCols)]];
+    queryCol[columns; typeMap; t; c; b; a; v; refs]
  };
 
 // Return either the available names or the requested columns for the T
