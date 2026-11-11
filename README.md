@@ -130,6 +130,16 @@ their CSV data. Each partition must use the same column names and types;
 directory partitions must also have matching row counts across their column
 files.
 
+## Build the C++ Plugin
+
+Build the plugin shared library using `cmake`:
+
+```sh
+cmake -B build && cmake --build build
+```
+
+This generates `install/csvdb.so`.
+
 ## Run the tests
 
 The integration tests use the sample partitions under `data/` and compare
@@ -137,6 +147,7 @@ CSVDB results with reference tables read directly from the CSV files:
 
 ```sh
 QPATH="$PWD:$HOME/.kx/mod" q test/csvdb.q -q
+QPATH="$PWD:$HOME/.kx/mod" q test/test_plugin.q -q
 ```
 
 Set `QPATH` to include both this project and the installed KX module

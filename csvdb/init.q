@@ -3,19 +3,23 @@
 
 tab:.q.use`kx.pq.t
 
+// Library function to read indices of a given type from a CSV file that contains only 1 column
+// @param FilePath Hsym  - Path to csv file
+// @param ColType  Char  - Type to read the data in as
+// @param Indices  Longs - Rows to read from csv file
+// @return Table         - CSV file read in as a 1 column table
+csvColReader:(`$"install/csvdb") 2:(`read_csv; 3)
+
 // Read a single column file, validate its header, and cast values to the
 // declared q type. The trailing space type skips any extra parsed field.
 csvColumn:{[dir; typeCode; column]
-    path:.Q.dd[dir; .Q.dd[column; `csv]];
-    data:(enlist typeCode; enlist ",") 0: path;
-    if[not (cols data)~enlist column;
-        '"column CSV header does not match its name"];
-    data
+    csvColumnRows[dir; typeCode; column; (::)]
  };
 
 // Read one column, validate its row count, then retain only matching rows.
 csvColumnRows:{[dir;typeCode;column;indices]
-    csvColumn[dir; typeCode; column]indices
+    path:.Q.dd[dir; .Q.dd[column; `csv]];
+    flip (enlist column)!enlist csvColReader[path; typeCode; indices]
  };
 
 // Read a flat, multi-column CSV file and verify its header against the schema.
